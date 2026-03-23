@@ -1,0 +1,9 @@
+{
+  "name": "APKURL",
+  "description": "A modern mobile security scanner that analyzes URLs and APK files for security threats using AI capabilities.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
