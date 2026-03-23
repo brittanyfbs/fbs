@@ -27,6 +27,12 @@ export interface ScanResult {
   permissions?: PermissionInfo[];
   recommendation?: string;
   actions?: string[];
+  // Advanced APK fields
+  malwareType?: string;
+  permissionAnalysis?: string[];
+  behavioralFlags?: string[];
+  estimatedDamage?: string;
+  isLive?: boolean;
 }
 
 export interface PermissionInfo {

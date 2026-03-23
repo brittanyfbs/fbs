@@ -1,6 +1,6 @@
 {
   "name": "APKURL",
-  "description": "A modern mobile security scanner that analyzes URLs and APK files for security threats using AI capabilities.",
+  "description": "A modern mobile security scanner that analyzes URLs using AI heuristics and APK files using the VirusTotal API.",
   "requestFramePermissions": [
     "camera",
     "microphone",

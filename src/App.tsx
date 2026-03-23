@@ -5,12 +5,13 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, Link, useParams } from 'react-router-dom';
-import { Shield, Home as HomeIcon, Clock, Settings as SettingsIcon, ChevronRight, Globe, Smartphone, AlertTriangle, CheckCircle2, X, ArrowLeft, Upload, Trash2, Info } from 'lucide-react';
+import { Shield, Home as HomeIcon, Clock, Settings as SettingsIcon, ChevronRight, Globe, Smartphone, AlertTriangle, CheckCircle2, X, ArrowLeft, Upload, Trash2, Info, Zap, ShieldAlert, Activity, FileText, Layout } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { RiskLevel, ScanType, ScanResult } from './types';
 import { COLORS, RISK_LABELS } from './constants';
 import { getScanHistory, getAppStats, saveScanResult, clearHistory, deleteScanResult } from './services/storage';
 import { scanUrl, scanApk } from './services/scanner';
+import { generateAnalysisSummary } from './services/geminiService';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -297,13 +298,21 @@ const ScanningPage = () => {
     const performScan = async () => {
       requestAnimationFrame(updateProgress);
       
-      const scanPromise = type === ScanType.URL ? scanUrl(target) : scanApk(target);
+      const { hash } = location.state || {};
+      const scanPromise = type === ScanType.URL ? scanUrl(target) : scanApk(target, hash);
       
       // Wait for both the scan and the minimum duration
       const [result] = await Promise.all([
         scanPromise,
         new Promise(resolve => setTimeout(resolve, duration))
       ]);
+      
+      // Generate AI Summary
+      setStatus('Generating AI Summary...');
+      const aiSummary = await generateAnalysisSummary(result);
+      result.analysisMessage = aiSummary.analysisMessage || result.analysisMessage;
+      result.indicators = aiSummary.indicators || result.indicators;
+      result.recommendation = aiSummary.recommendation || result.recommendation;
       
       setProgress(100);
       setStatus('Scan Complete');
@@ -398,22 +407,23 @@ const ResultPage = () => {
   const badgeColor = isHigh ? COLORS.HIGH : isMedium ? COLORS.MEDIUM : COLORS.LOW;
 
   return (
-    <div className="min-h-screen bg-white pb-10 flex flex-col">
+    <div className="min-h-screen bg-[#F8F9FA] pb-10 flex flex-col">
       <TopBar 
-        title="Scan Result" 
+        title="Security Report" 
         rightElement={
           <button 
             onClick={() => navigate('/')}
             className="text-[#1E7FFF] text-xs font-bold"
           >
-            Back to Center
+            Done
           </button>
         } 
       />
       
       <div className="px-5 py-4 space-y-6 flex-1">
+        {/* Summary Card */}
         <div 
-          className="rounded-3xl p-8 flex flex-col items-center justify-center text-white shadow-xl relative overflow-hidden"
+          className="rounded-[32px] p-8 flex flex-col items-center justify-center text-white shadow-2xl relative overflow-hidden"
           style={{ backgroundColor: badgeColor }}
         >
           <div className="absolute top-0 right-0 p-4 opacity-10">
@@ -424,108 +434,84 @@ const ResultPage = () => {
           </div>
           <h2 className="text-3xl font-black mb-1 relative z-10">{RISK_LABELS[scan.riskLevel]}</h2>
           <p className="text-[10px] font-bold opacity-80 uppercase tracking-widest mb-6 relative z-10">
-            Analysis Complete • {new Date(scan.timestamp).toLocaleDateString()}
+            {scan.malwareType && scan.malwareType !== "None" ? `${scan.malwareType} Detected` : "System Analysis Complete"}
           </p>
           
           <div className="grid grid-cols-2 gap-4 w-full relative z-10">
-            <div className="bg-black/20 backdrop-blur-sm rounded-2xl p-3 flex flex-col items-center border border-white/10">
+            <div className="bg-black/20 backdrop-blur-md rounded-2xl p-3 flex flex-col items-center border border-white/10">
               <span className="text-[8px] font-black uppercase tracking-widest opacity-70 mb-1">Risk Score</span>
               <span className="text-xl font-black">{scan.riskScore}%</span>
             </div>
-            <div className="bg-black/20 backdrop-blur-sm rounded-2xl p-3 flex flex-col items-center border border-white/10">
+            <div className="bg-black/20 backdrop-blur-md rounded-2xl p-3 flex flex-col items-center border border-white/10">
               <span className="text-[8px] font-black uppercase tracking-widest opacity-70 mb-1">Confidence</span>
               <span className="text-xl font-black">{scan.confidence}%</span>
             </div>
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div>
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Target {scan.type}</h3>
-            <div className="flex items-center bg-gray-50 p-4 rounded-2xl border border-gray-100">
-              <div className="text-[#1E7FFF] mr-3">
-                {scan.type === ScanType.URL ? <Globe size={20} /> : <Smartphone size={20} />}
-              </div>
-              <p className="font-bold text-gray-900 text-sm truncate">{scan.target}</p>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Detailed Analysis</h3>
-            <div className="bg-gray-100 p-5 rounded-2xl border border-gray-200">
-              <p className="text-sm text-gray-700 leading-relaxed font-medium">
-                {scan.analysisMessage}
+        {/* API Warning */}
+        {!scan.isLive && scan.type === ScanType.APK && (
+          <div className="bg-orange-50 border border-orange-100 rounded-2xl p-4 flex items-start">
+            <Info size={18} className="text-orange-500 mr-3 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-xs font-bold text-orange-900 mb-1">Local Analysis Only</p>
+              <p className="text-[10px] text-orange-700 leading-relaxed">
+                VirusTotal API key is not configured. This scan only checked for basic suspicious patterns and may not be accurate. Add your API key in the Secrets panel to enable full security scanning.
               </p>
             </div>
           </div>
+        )}
 
-          {scan.recommendation && (
+        {/* Analysis Content */}
+        <div className="space-y-6">
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-6"
+          >
             <div>
-              <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Recommendation</h3>
-              <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100">
-                <div className="flex items-start">
-                  <Info size={18} className="text-[#1E7FFF] mr-3 mt-0.5 flex-shrink-0" />
-                  <p className="text-sm text-[#1E7FFF] font-bold leading-relaxed">
+              <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Analysis Summary</h3>
+              <div className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm">
+                <p className="text-sm text-gray-700 leading-relaxed font-medium">
+                  {scan.analysisMessage}
+                </p>
+              </div>
+            </div>
+
+            {scan.indicators && scan.indicators.length > 0 && (
+              <div>
+                <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Key Reasons</h3>
+                <div className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm space-y-3">
+                  {scan.indicators.map((reason, idx) => (
+                    <div key={idx} className="flex items-start">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#1E7FFF] mt-1.5 mr-3 flex-shrink-0" />
+                      <p className="text-xs text-gray-600 font-medium leading-relaxed">{reason}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {scan.recommendation && (
+              <div>
+                <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Recommendation</h3>
+                <div className="bg-blue-50 p-6 rounded-[32px] border border-blue-100">
+                  <p className="text-xs text-blue-900 font-bold leading-relaxed">
                     {scan.recommendation}
                   </p>
                 </div>
               </div>
-            </div>
-          )}
-
-          {scan.actions && scan.actions.length > 0 && (
-            <div>
-              <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Suggested Actions</h3>
-              <div className="space-y-2">
-                {scan.actions.map((action, i) => (
-                  <div key={i} className="flex items-center bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-                    <CheckCircle2 size={16} className="text-green-500 mr-3" />
-                    <p className="text-sm font-bold text-gray-800">{action}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {scan.indicators && scan.indicators.length > 0 && (
-            <div>
-              <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Identified Indicators</h3>
-              <div className="space-y-2">
-                {scan.indicators.map((indicator, i) => (
-                  <div key={i} className="flex items-center bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-                    <AlertTriangle size={16} className="text-orange-500 mr-3" />
-                    <p className="text-sm font-bold text-gray-800">{indicator}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {scan.permissions && scan.permissions.length > 0 && (
-            <div>
-              <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Requested Permissions</h3>
-              <div className="space-y-3">
-                {scan.permissions.map((perm, i) => (
-                  <div key={i} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-sm font-bold text-gray-900">{perm.name}</p>
-                      <RiskBadge level={perm.severity} />
-                    </div>
-                    <p className="text-xs text-gray-500 leading-relaxed">{perm.description}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+            )}
+          </motion.div>
         </div>
       </div>
 
-      <div className="px-5 pt-4 space-y-4">
+      <div className="px-5 pt-4">
         <button 
           onClick={() => navigate('/')}
-          className="w-full bg-[#1A1A1A] text-white py-5 rounded-2xl font-black text-sm shadow-lg active:scale-[0.98] transition-all"
+          className="w-full bg-[#1A1A1A] text-white py-5 rounded-2xl font-black text-sm shadow-xl active:scale-[0.98] transition-all"
         >
-          Finish Security Review
+          Close Report
         </button>
       </div>
     </div>
@@ -535,11 +521,24 @@ const ResultPage = () => {
 const ScanApkPage = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isHashing, setIsHashing] = useState(false);
   
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      navigate('/scanning', { state: { type: ScanType.APK, target: file.name } });
+      setIsHashing(true);
+      try {
+        // Calculate hash before navigating
+        const buffer = await file.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+        const hash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+        navigate('/scanning', { state: { type: ScanType.APK, target: file.name, hash } });
+      } catch (err) {
+        console.error("Hashing error:", err);
+        navigate('/scanning', { state: { type: ScanType.APK, target: file.name } });
+      } finally {
+        setIsHashing(false);
+      }
     }
   };
 
@@ -552,12 +551,23 @@ const ScanApkPage = () => {
     e.stopPropagation();
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const file = e.dataTransfer.files?.[0];
     if (file && file.name.endsWith('.apk')) {
-      navigate('/scanning', { state: { type: ScanType.APK, target: file.name } });
+      setIsHashing(true);
+      try {
+        const buffer = await file.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+        const hash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+        navigate('/scanning', { state: { type: ScanType.APK, target: file.name, hash } });
+      } catch (err) {
+        console.error("Hashing error:", err);
+        navigate('/scanning', { state: { type: ScanType.APK, target: file.name } });
+      } finally {
+        setIsHashing(false);
+      }
     }
   };
 
@@ -578,16 +588,19 @@ const ScanApkPage = () => {
         />
 
         <div 
-          onClick={triggerFileInput}
+          onClick={isHashing ? undefined : triggerFileInput}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
-          className="w-full border-2 border-dashed border-gray-200 rounded-[32px] p-12 flex flex-col items-center justify-center text-gray-400 cursor-pointer active:bg-gray-50 transition-all bg-gray-50/50 hover:border-[#1E7FFF] hover:bg-blue-50/30 group"
+          className={cn(
+            "w-full border-2 border-dashed border-gray-200 rounded-[32px] p-12 flex flex-col items-center justify-center text-gray-400 cursor-pointer active:bg-gray-50 transition-all bg-gray-50/50 hover:border-[#1E7FFF] hover:bg-blue-50/30 group",
+            isHashing && "opacity-50 cursor-wait"
+          )}
         >
           <div className="bg-white p-5 rounded-3xl shadow-sm mb-4 text-[#1E7FFF] group-hover:scale-110 transition-transform">
-            <Upload size={32} />
+            {isHashing ? <Activity className="animate-spin" size={32} /> : <Upload size={32} />}
           </div>
-          <p className="font-black text-gray-900 mb-1">Choose APK File</p>
-          <p className="text-[10px] font-bold uppercase tracking-widest">Or drag and drop</p>
+          <p className="font-black text-gray-900 mb-1">{isHashing ? 'Analyzing File...' : 'Choose APK File'}</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest">{isHashing ? 'Please wait' : 'Or drag and drop'}</p>
         </div>
 
         <div className="mt-12">
@@ -721,11 +734,65 @@ const SettingsPage = () => {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [realTime, setRealTime] = useState(true);
   const [autoScan, setAutoScan] = useState(false);
+  const [configStatus, setConfigStatus] = useState<{ virustotal: boolean, gemini: boolean } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/config/status')
+      .then(res => res.json())
+      .then(setConfigStatus)
+      .catch(() => setConfigStatus({ virustotal: false, gemini: false }));
+  }, []);
 
   return (
     <div className="pb-24 bg-white min-h-screen">
       <TopBar title="Settings" />
       <div className="px-5 py-4 space-y-8">
+        {/* App Settings Section */}
+        <div>
+          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 px-1">Security Engines</h3>
+          <div className="bg-white rounded-3xl overflow-hidden border border-gray-100 shadow-sm">
+            <div className="p-5 flex items-center justify-between border-b border-gray-50">
+              <div className="flex items-center">
+                <div className="bg-blue-50 p-2 rounded-xl text-[#1E7FFF] mr-3">
+                  <Zap size={18} />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900 text-sm">VirusTotal API</p>
+                  <p className="text-[10px] text-gray-400 font-medium">For APK scanning</p>
+                </div>
+              </div>
+              <div className={cn(
+                "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider",
+                configStatus?.virustotal ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600"
+              )}>
+                {configStatus?.virustotal ? "Connected" : "Disconnected"}
+              </div>
+            </div>
+            <div className="p-5 flex items-center justify-between">
+              <div className="flex items-center">
+                <div className="bg-blue-50 p-2 rounded-xl text-[#1E7FFF] mr-3">
+                  <Activity size={18} />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900 text-sm">Gemini AI</p>
+                  <p className="text-[10px] text-gray-400 font-medium">For analysis summaries</p>
+                </div>
+              </div>
+              <div className={cn(
+                "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider",
+                configStatus?.gemini ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600"
+              )}>
+                {configStatus?.gemini ? "Connected" : "Disconnected"}
+              </div>
+            </div>
+          </div>
+          {!configStatus?.virustotal && (
+            <p className="mt-3 px-2 text-[10px] text-gray-400 leading-relaxed italic">
+              * Add VIRUSTOTAL_API_KEY to secrets to enable full scanning.
+            </p>
+          )}
+        </div>
+
         {/* App Settings Section */}
         <div>
           <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 px-1">App Settings</h3>
@@ -782,7 +849,7 @@ const SettingsPage = () => {
                 <Info size={20} className="text-[#1E7FFF] mr-3" />
                 <p className="font-bold text-gray-900 text-sm">App Version</p>
               </div>
-              <p className="text-gray-400 font-black text-xs">V4.2.0</p>
+              <p className="text-gray-400 font-black text-xs">V4.3.0</p>
             </div>
             <button 
               onClick={() => setShowPrivacy(true)}

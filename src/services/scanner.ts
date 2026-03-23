@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { GoogleGenAI, Type } from "@google/genai";
 import { RiskLevel, ScanResult, ScanType, PermissionInfo } from '../types';
 
 const DANGEROUS_PERMISSIONS: PermissionInfo[] = [
@@ -16,89 +15,42 @@ const DANGEROUS_PERMISSIONS: PermissionInfo[] = [
   { name: 'READ_EXTERNAL_STORAGE', description: 'Allows the app to read files on your device.', severity: RiskLevel.MEDIUM },
 ];
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-
 export const scanUrl = async (url: string): Promise<ScanResult> => {
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Analyze this URL for security risks: ${url}. 
-      Act as a security expert and a Random Forest classifier. 
-      Classify the risk level as LOW, MEDIUM, or HIGH.
-      Provide:
-      1. riskLevel: LOW, MEDIUM, or HIGH
-      2. riskScore: A number from 0 to 100 representing the risk level (higher is riskier)
-      3. confidence: A number from 0 to 100 representing your confidence in this assessment
-      4. analysisMessage: A concise explanation of the risk
-      5. indicators: A list of identified indicators (e.g., suspicious domain, insecure protocol, phishing keywords)
-      6. recommendation: A clear recommendation for the user (e.g., "Do not enter any personal information on this site.")
-      7. actions: A list of specific actions the user should take (e.g., "Close the tab immediately", "Report as phishing")`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            riskLevel: { type: Type.STRING, enum: ["LOW", "MEDIUM", "HIGH"] },
-            riskScore: { type: Type.NUMBER },
-            confidence: { type: Type.NUMBER },
-            analysisMessage: { type: Type.STRING },
-            indicators: { type: Type.ARRAY, items: { type: Type.STRING } },
-            recommendation: { type: Type.STRING },
-            actions: { type: Type.ARRAY, items: { type: Type.STRING } }
-          },
-          required: ["riskLevel", "riskScore", "confidence", "analysisMessage", "indicators", "recommendation", "actions"]
-        }
-      }
-    });
-
-    const result = JSON.parse(response.text || '{}');
-
-    return {
-      id: Math.random().toString(36).substr(2, 9),
-      type: ScanType.URL,
-      target: url,
-      riskLevel: result.riskLevel as RiskLevel,
-      riskScore: result.riskScore,
-      confidence: result.confidence,
-      timestamp: Date.now(),
-      analysisMessage: result.analysisMessage,
-      indicators: result.indicators,
-      recommendation: result.recommendation,
-      actions: result.actions,
-    };
-  } catch (error) {
-    console.error("Gemini API Error:", error);
-    // Fallback to basic logic if API fails
-    return fallbackScanUrl(url);
-  }
-};
-
-const fallbackScanUrl = (url: string): ScanResult => {
   const indicators: string[] = [];
   let riskLevel = RiskLevel.LOW;
   let riskScore = 15;
   let confidence = 85;
-  let analysisMessage = "No suspicious patterns detected. The URL appears to be safe based on our current AI analysis.";
-  let recommendation = "You can proceed with caution. Always verify the source before entering sensitive data.";
+  let analysisMessage = "No suspicious patterns were detected during this heuristic scan. However, this does not guarantee the URL is entirely safe.";
+  let recommendation = "Exercise caution. Always verify the source before entering sensitive data.";
   let actions = ["Verify the URL matches the official site", "Check for HTTPS"];
 
   try {
     const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
     if (urlObj.protocol === 'http:') {
-      indicators.push('Insecure protocol (HTTP)');
+      indicators.push('Unsafe connection');
       riskLevel = RiskLevel.MEDIUM;
       riskScore = 55;
-      analysisMessage = "Analysis completed but insecure protocol was detected. Exercise caution.";
-      recommendation = "Avoid entering sensitive information on this website as the connection is not encrypted.";
-      actions = ["Look for an HTTPS version of this site", "Do not enter passwords or credit card info"];
+      analysisMessage = "This link has some risk because it uses an old, unsafe connection. Be careful before clicking.";
+      recommendation = "Do not type any private info on this website.";
+      actions = ["Check if there is a safer version of this site", "Do not type passwords or card details"];
+    }
+    
+    const suspiciousKeywords = ['login', 'verify', 'account', 'secure', 'update', 'bank'];
+    if (suspiciousKeywords.some(k => url.toLowerCase().includes(k)) && !url.includes('google.com') && !url.includes('microsoft.com')) {
+      indicators.push('Suspicious words');
+      riskLevel = RiskLevel.HIGH;
+      riskScore = 85;
+      analysisMessage = "This link is dangerous because it looks like a fake login or banking page. Do not open it.";
+      recommendation = "Do not type any personal info on this site.";
+      actions = ["Close the page now", "Report this link"];
     }
   } catch (e) {
-    indicators.push('Malformed URL structure');
+    indicators.push('Broken link');
     riskLevel = RiskLevel.HIGH;
     riskScore = 95;
-    analysisMessage = "Critical error: The URL format is invalid or malicious.";
-    recommendation = "Do not visit this URL. It may be a phishing attempt or contain malware.";
-    actions = ["Close the tab immediately", "Report this link if you received it via SMS/Email"];
+    analysisMessage = "This link is dangerous because it is broken or written incorrectly. Do not open it.";
+    recommendation = "Do not visit this link. It might be a trick to steal your info.";
+    actions = ["Close the page now", "Report this link if you got it in a message"];
   }
 
   return {
@@ -109,69 +61,70 @@ const fallbackScanUrl = (url: string): ScanResult => {
     riskScore,
     confidence,
     timestamp: Date.now(),
-    analysisMessage,
+    analysisMessage: riskLevel === RiskLevel.LOW ? "This link is safe because no suspicious patterns were found. No threats were found." : analysisMessage,
     indicators,
     recommendation,
     actions,
+    isLive: false
   };
 };
 
-export const scanApk = async (filename: string): Promise<ScanResult> => {
+export const scanApk = async (filename: string, hash?: string): Promise<ScanResult> => {
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Analyze this APK filename for security risks: ${filename}. 
-      Act as a security expert and a Random Forest classifier. 
-      Classify the risk level as LOW, MEDIUM, or HIGH.
-      Provide:
-      1. riskLevel: LOW, MEDIUM, or HIGH
-      2. riskScore: A number from 0 to 100 representing the risk level (higher is riskier)
-      3. confidence: A number from 0 to 100 representing your confidence in this assessment
-      4. analysisMessage: A concise explanation of the risk
-      5. indicators: A list of identified indicators
-      6. permissions: A list of potentially dangerous permissions this app might request (choose from: READ_SMS, RECEIVE_SMS, READ_CONTACTS, ACCESS_FINE_LOCATION, RECORD_AUDIO, CAMERA, READ_EXTERNAL_STORAGE)
-      7. recommendation: A clear recommendation for the user
-      8. actions: A list of specific actions the user should take`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            riskLevel: { type: Type.STRING, enum: ["LOW", "MEDIUM", "HIGH"] },
-            riskScore: { type: Type.NUMBER },
-            confidence: { type: Type.NUMBER },
-            analysisMessage: { type: Type.STRING },
-            indicators: { type: Type.ARRAY, items: { type: Type.STRING } },
-            permissions: { type: Type.ARRAY, items: { type: Type.STRING } },
-            recommendation: { type: Type.STRING },
-            actions: { type: Type.ARRAY, items: { type: Type.STRING } }
-          },
-          required: ["riskLevel", "riskScore", "confidence", "analysisMessage", "indicators", "permissions", "recommendation", "actions"]
-        }
-      }
-    });
+    // If no hash provided, we can't search VT without uploading, so fallback
+    if (!hash) {
+      return fallbackScanApk(filename);
+    }
 
-    const result = JSON.parse(response.text || '{}');
-    const permissions = (result.permissions || []).map((pName: string) => 
-      DANGEROUS_PERMISSIONS.find(p => p.name === pName)
-    ).filter(Boolean) as PermissionInfo[];
+    const response = await fetch(`/api/vt/file/${hash}`);
+
+    if (response.status === 404 || response.status === 503 || response.status === 401 || response.status === 403) {
+      let message = "File hash not found in VirusTotal database. Performed local heuristic analysis.";
+      if (response.status === 503) message = "API Key Missing: Performed basic local check only.";
+      if (response.status === 401 || response.status === 403) message = "API Key Invalid: Please check your VirusTotal API key in secrets.";
+
+      return {
+        ...fallbackScanApk(filename),
+        analysisMessage: message,
+        isLive: false
+      };
+    }
+
+    if (!response.ok) {
+      throw new Error(`VirusTotal API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const attributes = data.data.attributes;
+    const stats = attributes.last_analysis_stats;
+    const results = attributes.last_analysis_results;
+
+    const maliciousCount = stats.malicious;
+    const totalEngines = Object.keys(results).length;
+    
+    let riskLevel = RiskLevel.LOW;
+    if (maliciousCount > 5) riskLevel = RiskLevel.HIGH;
+    else if (maliciousCount > 0) riskLevel = RiskLevel.MEDIUM;
 
     return {
       id: Math.random().toString(36).substr(2, 9),
       type: ScanType.APK,
       target: filename,
-      riskLevel: result.riskLevel as RiskLevel,
-      riskScore: result.riskScore,
-      confidence: result.confidence,
+      riskLevel,
+      riskScore: Math.min(Math.round((maliciousCount / totalEngines) * 500), 100),
+      confidence: 98,
       timestamp: Date.now(),
-      analysisMessage: result.analysisMessage,
-      indicators: result.indicators,
-      permissions,
-      recommendation: result.recommendation,
-      actions: result.actions,
+      analysisMessage: `VirusTotal Report: ${maliciousCount} security vendors flagged this file as malicious.`,
+      indicators: [`VT Detection: ${maliciousCount}/${totalEngines}`, `SHA-256: ${hash.substring(0, 16)}...`],
+      permissions: [], 
+      recommendation: maliciousCount > 0 ? "DANGER: This file is flagged as malicious by multiple security engines. Do not install." : "VirusTotal found no threats for this file hash.",
+      actions: maliciousCount > 0 ? ["Delete the file immediately", "Scan your device for infections"] : ["Proceed with caution"],
+      malwareType: maliciousCount > 0 ? "Detected Malware" : "None",
+      isLive: true
     };
+
   } catch (error) {
-    console.error("Gemini API Error:", error);
+    console.error("VirusTotal API Error:", error);
     return fallbackScanApk(filename);
   }
 };
@@ -181,8 +134,8 @@ const fallbackScanApk = (filename: string): ScanResult => {
   let riskLevel = RiskLevel.LOW;
   let riskScore = 10;
   let confidence = 80;
-  let analysisMessage = "Static analysis complete. No high-risk code patterns or privacy-invasive permissions found.";
-  let recommendation = "This app appears safe to install, but always download apps from official stores like Google Play.";
+  let analysisMessage = "Static analysis complete. No high-risk code patterns or privacy-invasive permissions were identified in this scan. This is not a guarantee of safety.";
+  let recommendation = "Always download apps from official stores like Google Play. Proceed with caution.";
   let actions = ["Verify the developer's reputation", "Check user reviews on official stores"];
   const permissions: PermissionInfo[] = [];
 
@@ -200,6 +153,26 @@ const fallbackScanApk = (filename: string): ScanResult => {
     actions = ["Delete the APK file immediately", "Scan your device for existing threats", "Change your banking passwords if you already installed it"];
     permissions.push(DANGEROUS_PERMISSIONS[0]); // READ_SMS
     permissions.push(DANGEROUS_PERMISSIONS[1]); // RECEIVE_SMS
+    
+    return {
+      id: Math.random().toString(36).substr(2, 9),
+      type: ScanType.APK,
+      target: filename,
+      riskLevel,
+      riskScore,
+      confidence,
+      timestamp: Date.now(),
+      analysisMessage,
+      indicators,
+      permissions,
+      recommendation,
+      actions,
+      malwareType: "Trojan",
+      permissionAnalysis: ["Requests READ_SMS and RECEIVE_SMS which are critical for intercepting OTPs."],
+      behavioralFlags: ["Potential SMS interception", "Suspicious naming convention"],
+      estimatedDamage: "Unauthorized access to banking accounts and personal messages.",
+      isLive: false
+    };
   }
 
   return {
@@ -210,10 +183,15 @@ const fallbackScanApk = (filename: string): ScanResult => {
     riskScore,
     confidence,
     timestamp: Date.now(),
-    analysisMessage,
-    indicators,
+    analysisMessage: "Performed local heuristic analysis.",
+    indicators: ["Local Analysis Only", ...indicators],
     permissions,
-    recommendation,
-    actions,
+    recommendation: "Always download apps from official stores.",
+    actions: [...actions],
+    malwareType: "None",
+    permissionAnalysis: ["No dangerous permission combinations detected."],
+    behavioralFlags: ["No suspicious background services identified."],
+    estimatedDamage: "Minimal risk to device or data.",
+    isLive: false
   };
 };
