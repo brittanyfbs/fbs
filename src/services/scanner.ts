@@ -23,34 +23,62 @@ export const scanUrl = async (url: string): Promise<ScanResult> => {
   let analysisMessage = "No suspicious patterns were detected during this heuristic scan. However, this does not guarantee the URL is entirely safe.";
   let recommendation = "Exercise caution. Always verify the source before entering sensitive data.";
   let actions = ["Verify the URL matches the official site", "Check for HTTPS"];
+  let isLive = false;
 
   try {
-    const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
-    if (urlObj.protocol === 'http:') {
-      indicators.push('Unsafe connection');
-      riskLevel = RiskLevel.MEDIUM;
-      riskScore = 55;
-      analysisMessage = "This link has some risk because it uses an old, unsafe connection. Be careful before clicking.";
-      recommendation = "Do not type any private info on this website.";
-      actions = ["Check if there is a safer version of this site", "Do not type passwords or card details"];
-    }
+    // Normalize URL
+    const normalizedUrl = url.startsWith('http') ? url : `https://${url}`;
     
-    const suspiciousKeywords = ['login', 'verify', 'account', 'secure', 'update', 'bank'];
-    if (suspiciousKeywords.some(k => url.toLowerCase().includes(k)) && !url.includes('google.com') && !url.includes('microsoft.com')) {
-      indicators.push('Suspicious words');
-      riskLevel = RiskLevel.HIGH;
-      riskScore = 85;
-      analysisMessage = "This link is dangerous because it looks like a fake login or banking page. Do not open it.";
-      recommendation = "Do not type any personal info on this site.";
-      actions = ["Close the page now", "Report this link"];
+    // Generate VirusTotal URL ID (Base64 without padding)
+    const urlId = btoa(normalizedUrl).replace(/=/g, '');
+
+    const response = await fetch(`/api/vt/url/${urlId}`);
+
+    if (response.ok) {
+      const data = await response.json();
+      const stats = data.data.attributes.last_analysis_stats;
+      const maliciousCount = stats.malicious;
+      const totalEngines = Object.keys(data.data.attributes.last_analysis_results).length;
+
+      isLive = true;
+      riskScore = Math.min(Math.round((maliciousCount / totalEngines) * 500), 100);
+      confidence = 98;
+      
+      if (maliciousCount > 3) riskLevel = RiskLevel.HIGH;
+      else if (maliciousCount > 0) riskLevel = RiskLevel.MEDIUM;
+
+      analysisMessage = `VirusTotal Report: ${maliciousCount} security vendors flagged this URL as malicious.`;
+      indicators.push(`VT Detection: ${maliciousCount}/${totalEngines}`);
+      recommendation = maliciousCount > 0 
+        ? "DANGER: This URL is flagged as malicious. Do not open it." 
+        : "VirusTotal found no threats for this URL.";
+      actions = maliciousCount > 0 
+        ? ["Close the browser tab", "Report this link if you received it in a message"] 
+        : ["Proceed with caution"];
+    } else {
+      // Fallback to heuristic if VT fails or URL is not in database
+      const urlObj = new URL(normalizedUrl);
+      if (urlObj.protocol === 'http:') {
+        indicators.push('Unsafe connection (HTTP)');
+        riskLevel = RiskLevel.MEDIUM;
+        riskScore = 55;
+        analysisMessage = "This link uses an unencrypted connection (HTTP), which can expose your data to interceptors.";
+      }
+      
+      const suspiciousKeywords = ['login', 'verify', 'account', 'secure', 'update', 'bank', 'gift', 'prize'];
+      if (suspiciousKeywords.some(k => url.toLowerCase().includes(k)) && !url.includes('google.com') && !url.includes('microsoft.com')) {
+        indicators.push('Suspicious keywords detected');
+        riskLevel = RiskLevel.HIGH;
+        riskScore = 85;
+        analysisMessage = "This link contains keywords often used in phishing attacks to trick users into giving up credentials.";
+      }
     }
   } catch (e) {
-    indicators.push('Broken link');
+    console.error("URL Scan Error:", e);
+    indicators.push('Invalid URL format');
     riskLevel = RiskLevel.HIGH;
     riskScore = 95;
-    analysisMessage = "This link is dangerous because it is broken or written incorrectly. Do not open it.";
-    recommendation = "Do not visit this link. It might be a trick to steal your info.";
-    actions = ["Close the page now", "Report this link if you got it in a message"];
+    analysisMessage = "The URL provided is malformed or invalid. This is often a sign of a malicious link designed to bypass filters.";
   }
 
   return {
@@ -61,11 +89,11 @@ export const scanUrl = async (url: string): Promise<ScanResult> => {
     riskScore,
     confidence,
     timestamp: Date.now(),
-    analysisMessage: riskLevel === RiskLevel.LOW ? "This link is safe because no suspicious patterns were found. No threats were found." : analysisMessage,
+    analysisMessage,
     indicators,
     recommendation,
     actions,
-    isLive: false
+    isLive
   };
 };
 
