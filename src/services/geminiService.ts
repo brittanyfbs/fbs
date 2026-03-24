@@ -29,13 +29,13 @@ export async function generateAnalysisSummary(scan: ScanResult): Promise<Partial
       Generate 3 parts in JSON format:
       1. summary (1–2 sentences): Clear explanation of the risk level. Natural human tone (no "it").
       2. reasons (bullet points): Explain why the ${scan.type} is flagged. Use simple language.
-      3. recommendation: Tell the user what to do next.
+      3. recommendation: Provide a neutral security recommendation in VERY SIMPLE ENGLISH. DO NOT explicitly tell the user to "install", "open", or "use" the file/link. Instead, state the findings and let the user make the final decision. Use easy words that anyone can understand. For example, "This looks okay, but always be careful with things from the internet."
 
       ---
       ## STYLE GUIDELINES
-      LOW RISK: Tone: reassuring. Example: "This ${scan.type === ScanType.APK ? 'app' : 'link'} looks safe. The ${scan.type === ScanType.APK ? 'permissions match its expected function' : 'domain is trusted'} and no unusual patterns are found."
-      MEDIUM RISK: Tone: cautious. Example: "Some aspects of this ${scan.type === ScanType.APK ? 'app' : 'link'} look unusual. Certain ${scan.type === ScanType.APK ? 'permissions or naming patterns' : 'parts of the link'} may not fully match its function."
-      HIGH RISK: Tone: warning. Example: "This ${scan.type === ScanType.APK ? 'app' : 'link'} is likely dangerous. The ${scan.type === ScanType.APK ? 'requested permissions are highly sensitive' : 'URL imitates a trusted service'} and may be used for malicious purposes."
+      LOW RISK: Tone: neutral and informative. Example: "This ${scan.type === ScanType.APK ? 'app' : 'link'} appears safe based on our analysis. No malicious patterns or unusual ${scan.type === ScanType.APK ? 'permissions' : 'domain behaviors'} were detected."
+      MEDIUM RISK: Tone: cautious. Example: "Some aspects of this ${scan.type === ScanType.APK ? 'app' : 'link'} look unusual. Certain ${scan.type === ScanType.APK ? 'permissions or naming patterns' : 'parts of the link'} may not fully match its expected function. Exercise caution."
+      HIGH RISK: Tone: warning. Example: "This ${scan.type === ScanType.APK ? 'app' : 'link'} is likely dangerous. The ${scan.type === ScanType.APK ? 'requested permissions are highly sensitive' : 'URL imitates a trusted service'} and could be used for malicious purposes. Proceeding is not recommended."
 
       ${scan.type === ScanType.APK ? `
       ---

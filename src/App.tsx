@@ -29,11 +29,7 @@ const TopBar = ({ title, showBack = false, onBack, rightElement }: { title: stri
         <button onClick={onBack} className="mr-4 text-gray-800">
           <ArrowLeft size={24} />
         </button>
-      ) : (
-        <div className="mr-3 text-[#1E7FFF]">
-          <Shield size={28} fill="#1E7FFF" />
-        </div>
-      )}
+      ) : null}
       <h1 className={cn("text-xl font-bold text-gray-900", !showBack && "text-2xl")}>{title}</h1>
     </div>
     {rightElement}
@@ -239,18 +235,6 @@ const ScanUrlPage = () => {
             Start Security Analysis
           </button>
         </div>
-
-        <div className="mt-12">
-          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-6">AI Capabilities</h3>
-          <ul className="space-y-4">
-            {['TYPOSQUATTING DETECTION', 'DOMAIN TRUST VERIFICATION', 'SUSPICIOUS METADATA ANALYSIS'].map((item) => (
-              <li key={item} className="flex items-center text-xs font-bold text-gray-700">
-                <div className="w-1.5 h-1.5 rounded-full bg-[#1E7FFF] mr-3" />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
       </div>
     </div>
   );
@@ -377,16 +361,8 @@ const ScanningPage = () => {
 
         <div className="space-y-3">
           <h2 className="text-2xl font-black text-gray-900">
-            {type === ScanType.URL ? "URL Security Scan" : "APK Threat Analysis"}
+            {type === ScanType.URL ? "URL SCANNING..." : "APK SCANNING..."}
           </h2>
-          <div className="flex items-center justify-center space-x-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#1E7FFF] animate-bounce" style={{ animationDelay: '0ms' }} />
-            <div className="w-1.5 h-1.5 rounded-full bg-[#1E7FFF] animate-bounce" style={{ animationDelay: '150ms' }} />
-            <div className="w-1.5 h-1.5 rounded-full bg-[#1E7FFF] animate-bounce" style={{ animationDelay: '300ms' }} />
-            <p className="text-sm font-bold text-gray-500 min-w-[200px]">
-              {status}
-            </p>
-          </div>
         </div>
       </div>
     </div>
@@ -426,9 +402,6 @@ const ResultPage = () => {
           className="rounded-[32px] p-8 flex flex-col items-center justify-center text-white shadow-2xl relative overflow-hidden"
           style={{ backgroundColor: badgeColor }}
         >
-          <div className="absolute top-0 right-0 p-4 opacity-10">
-            <Shield size={120} />
-          </div>
           <div className="bg-white/20 p-4 rounded-3xl mb-4 relative z-10">
             <AlertTriangle size={40} />
           </div>
@@ -576,7 +549,7 @@ const ScanApkPage = () => {
       <TopBar title="APK Scanner" showBack onBack={() => navigate(-1)} />
       <div className="px-6 py-4">
         <p className="text-gray-500 mb-10 leading-relaxed">
-          Select an APK file to analyze its code structure and privacy permissions.
+          Pick an APK file to check for security and privacy risks.
         </p>
         
         <input 
@@ -732,125 +705,15 @@ const HistoryPage = () => {
 
 const SettingsPage = () => {
   const [showPrivacy, setShowPrivacy] = useState(false);
-  const [realTime, setRealTime] = useState(true);
-  const [autoScan, setAutoScan] = useState(false);
-  const [configStatus, setConfigStatus] = useState<{ virustotal: boolean, gemini: boolean } | null>(null);
-
-  useEffect(() => {
-    fetch('/api/config/status')
-      .then(res => res.json())
-      .then(setConfigStatus)
-      .catch(() => setConfigStatus({ virustotal: false, gemini: false }));
-  }, []);
 
   return (
     <div className="pb-24 bg-white min-h-screen">
       <TopBar title="Settings" />
       <div className="px-5 py-4 space-y-8">
-        {/* App Settings Section */}
-        <div>
-          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 px-1">Security Engines</h3>
-          <div className="bg-white rounded-3xl overflow-hidden border border-gray-100 shadow-sm">
-            <div className="p-5 flex items-center justify-between border-b border-gray-50">
-              <div className="flex items-center">
-                <div className="bg-blue-50 p-2 rounded-xl text-[#1E7FFF] mr-3">
-                  <Zap size={18} />
-                </div>
-                <div>
-                  <p className="font-bold text-gray-900 text-sm">VirusTotal API</p>
-                  <p className="text-[10px] text-gray-400 font-medium">For APK scanning</p>
-                </div>
-              </div>
-              <div className={cn(
-                "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider",
-                configStatus?.virustotal ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600"
-              )}>
-                {configStatus?.virustotal ? "Connected" : "Disconnected"}
-              </div>
-            </div>
-            <div className="p-5 flex items-center justify-between">
-              <div className="flex items-center">
-                <div className="bg-blue-50 p-2 rounded-xl text-[#1E7FFF] mr-3">
-                  <Activity size={18} />
-                </div>
-                <div>
-                  <p className="font-bold text-gray-900 text-sm">Gemini AI</p>
-                  <p className="text-[10px] text-gray-400 font-medium">For analysis summaries</p>
-                </div>
-              </div>
-              <div className={cn(
-                "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider",
-                configStatus?.gemini ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600"
-              )}>
-                {configStatus?.gemini ? "Connected" : "Disconnected"}
-              </div>
-            </div>
-          </div>
-          {!configStatus?.virustotal && (
-            <p className="mt-3 px-2 text-[10px] text-gray-400 leading-relaxed italic">
-              * Add VIRUSTOTAL_API_KEY to secrets to enable full scanning.
-            </p>
-          )}
-        </div>
-
-        {/* App Settings Section */}
-        <div>
-          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 px-1">App Settings</h3>
-          <div className="bg-white rounded-3xl overflow-hidden border border-gray-100 shadow-sm">
-            <div className="p-5 flex items-center justify-between border-b border-gray-50">
-              <div className="flex items-center">
-                <div className="bg-blue-50 p-2 rounded-xl text-[#1E7FFF] mr-3">
-                  <Shield size={18} />
-                </div>
-                <p className="font-bold text-gray-900 text-sm">Real-time Protection</p>
-              </div>
-              <button 
-                onClick={() => setRealTime(!realTime)}
-                className={cn(
-                  "w-12 h-6 rounded-full transition-all duration-300 relative",
-                  realTime ? "bg-[#1E7FFF]" : "bg-gray-200"
-                )}
-              >
-                <div className={cn(
-                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300",
-                  realTime ? "left-7" : "left-1"
-                )} />
-              </button>
-            </div>
-            <div className="p-5 flex items-center justify-between border-b border-gray-50">
-              <div className="flex items-center">
-                <div className="bg-blue-50 p-2 rounded-xl text-[#1E7FFF] mr-3">
-                  <Clock size={18} />
-                </div>
-                <p className="font-bold text-gray-900 text-sm">Auto-scan Downloads</p>
-              </div>
-              <button 
-                onClick={() => setAutoScan(!autoScan)}
-                className={cn(
-                  "w-12 h-6 rounded-full transition-all duration-300 relative",
-                  autoScan ? "bg-[#1E7FFF]" : "bg-gray-200"
-                )}
-              >
-                <div className={cn(
-                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300",
-                  autoScan ? "left-7" : "left-1"
-                )} />
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* Support Section */}
         <div>
           <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 px-1">Support & Info</h3>
           <div className="bg-gray-50 rounded-3xl overflow-hidden border border-gray-100">
-            <div className="p-5 flex items-center justify-between border-b border-gray-200/50">
-              <div className="flex items-center">
-                <Info size={20} className="text-[#1E7FFF] mr-3" />
-                <p className="font-bold text-gray-900 text-sm">App Version</p>
-              </div>
-              <p className="text-gray-400 font-black text-xs">V4.3.0</p>
-            </div>
             <button 
               onClick={() => setShowPrivacy(true)}
               className="w-full p-5 flex items-center justify-between active:bg-gray-100 transition-colors"
@@ -866,7 +729,7 @@ const SettingsPage = () => {
 
         <div className="bg-blue-50 p-6 rounded-3xl border border-blue-100">
           <p className="text-xs text-blue-800 font-bold leading-relaxed">
-            APKURL uses advanced AI heuristics to protect your digital life. Always exercise caution when interacting with unknown links or apps.
+            This app helps you check if a link or APK might be dangerous, but it may not always be correct. Always stay careful when opening links or installing apps. The final choice is yours.
           </p>
         </div>
       </div>
