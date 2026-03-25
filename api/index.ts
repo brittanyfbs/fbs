@@ -46,7 +46,7 @@ async function createServer() {
   app.get("/api/config/status", (req, res) => {
     res.json({
       virustotal: !!VT_API_KEY,
-      gemini: !!process.env.GEMINI_API_KEY
+      gemini: !!(process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY)
     });
   });
 
@@ -154,7 +154,7 @@ async function createServer() {
 // For local development
 if (!process.env.VERCEL) {
   createServer().then(app => {
-    const port = process.env.PORT || 3000;
+    const port = Number(process.env.PORT) || 3000;
     app.listen(port, "0.0.0.0", () => {
       console.log(`Server running on port ${port}`);
     });
