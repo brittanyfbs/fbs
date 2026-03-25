@@ -46,7 +46,7 @@ async function createServer() {
   app.get("/api/config/status", (req, res) => {
     res.json({
       virustotal: !!VT_API_KEY,
-      gemini: !!process.env.GEMINI_API_KEY
+      gemini: !!process.env.VITE_GEMINI_API_KEY
     });
   });
 
