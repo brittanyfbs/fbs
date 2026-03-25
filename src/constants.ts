@@ -18,7 +18,7 @@ export const COLORS = {
 };
 
 export const RISK_LABELS = {
-  HIGH: 'HIGH RISK',
-  MEDIUM: 'MEDIUM RISK',
-  LOW: 'LOW RISK',
+  HIGH: 'High Risk',
+  MEDIUM: 'Medium Risk',
+  LOW: 'Low Risk',
 };

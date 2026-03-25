@@ -2,9 +2,14 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import multer from "multer";
+import ApkReader from "apkreader";
+import fs from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const upload = multer({ dest: 'uploads/' });
 
 async function startServer() {
   const app = express();
@@ -13,6 +18,7 @@ async function startServer() {
   app.use(express.json());
 
   const VT_API_KEY = process.env.VIRUSTOTAL_API_KEY;
+
   if (VT_API_KEY) {
     console.log("VirusTotal API Key loaded successfully.");
   } else {
@@ -25,6 +31,33 @@ async function startServer() {
       virustotal: !!VT_API_KEY,
       gemini: !!process.env.GEMINI_API_KEY
     });
+  });
+
+  // APK Analysis
+  app.post("/api/apk/analyze", upload.single('apk'), async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "No APK file uploaded" });
+    }
+
+    const filePath = req.file.path;
+    try {
+      const reader = await ApkReader.open(filePath);
+      const manifest = await reader.readManifest();
+      
+      // Clean up uploaded file
+      fs.unlinkSync(filePath);
+      
+      res.json({
+        packageName: manifest.package,
+        versionName: manifest.versionName,
+        versionCode: manifest.versionCode,
+        permissions: manifest.usesPermissions?.map((p: any) => p.name) || [],
+      });
+    } catch (error) {
+      console.error("APK Analysis Error:", error);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      res.status(500).json({ error: "Failed to analyze APK manifest" });
+    }
   });
 
   app.get("/api/vt/url/:id", async (req, res) => {

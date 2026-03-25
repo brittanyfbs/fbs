@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, Link, useParams } from 'react-router-dom';
-import { Shield, Home as HomeIcon, Clock, Settings as SettingsIcon, ChevronRight, Globe, Smartphone, AlertTriangle, CheckCircle2, X, ArrowLeft, Upload, Trash2, Info, Zap, ShieldAlert, Activity, FileText, Layout } from 'lucide-react';
+import { Shield, Home as HomeIcon, Clock, Settings as SettingsIcon, ChevronRight, Globe, Smartphone, AlertTriangle, CheckCircle2, X, ArrowLeft, Upload, Trash2, Info, Zap, ShieldAlert, Activity, FileText, Layout, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { RiskLevel, ScanType, ScanResult } from './types';
 import { COLORS, RISK_LABELS } from './constants';
@@ -97,8 +97,10 @@ const HomePage = () => {
     <div className="pb-24 bg-white min-h-screen">
       <TopBar title="APKURL" />
       <div className="px-5 space-y-6">
-        <div className="pt-2">
-          <h2 className="text-3xl font-extrabold text-gray-900">Security Center</h2>
+        <div className="pt-2 flex justify-between items-end">
+          <div>
+            <h2 className="text-3xl font-extrabold text-gray-900">Security Center</h2>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -111,7 +113,6 @@ const HomePage = () => {
             </div>
             <div>
               <p className="font-bold text-gray-900 text-lg">Scan URL</p>
-              <p className="text-xs text-gray-500">Analyze phishing links</p>
             </div>
           </button>
           <button 
@@ -123,7 +124,6 @@ const HomePage = () => {
             </div>
             <div>
               <p className="font-bold text-gray-900 text-lg">Scan APK</p>
-              <p className="text-xs text-gray-500">Analyze app safety</p>
             </div>
           </button>
         </div>
@@ -230,7 +230,7 @@ const ScanUrlPage = () => {
           <button 
             onClick={handleScan}
             disabled={!url.trim()}
-            className="w-full bg-gradient-to-r from-[#1E7FFF] to-[#0062FF] text-white py-4 rounded-2xl font-bold shadow-lg active:scale-[0.98] transition-all disabled:from-gray-300 disabled:to-gray-400 disabled:shadow-none"
+            className="w-full bg-[#2337C6] text-white py-4 rounded-2xl font-bold shadow-lg active:scale-[0.98] transition-all disabled:bg-gray-300 disabled:shadow-none"
           >
             Start Security Analysis
           </button>
@@ -282,8 +282,8 @@ const ScanningPage = () => {
     const performScan = async () => {
       requestAnimationFrame(updateProgress);
       
-      const { hash } = location.state || {};
-      const scanPromise = type === ScanType.URL ? scanUrl(target) : scanApk(target, hash);
+      const { hash, file } = location.state || {};
+      const scanPromise = type === ScanType.URL ? scanUrl(target) : scanApk(target, hash, file);
       
       // Wait for both the scan and the minimum duration
       const [result] = await Promise.all([
@@ -402,18 +402,12 @@ const ResultPage = () => {
           className="rounded-[32px] p-8 flex flex-col items-center justify-center text-white shadow-2xl relative overflow-hidden"
           style={{ backgroundColor: badgeColor }}
         >
-          <div className="bg-white/20 p-4 rounded-3xl mb-4 relative z-10">
-            <AlertTriangle size={40} />
-          </div>
-          <h2 className="text-3xl font-black mb-1 relative z-10">{RISK_LABELS[scan.riskLevel]}</h2>
-          <p className="text-[10px] font-bold opacity-80 uppercase tracking-widest mb-6 relative z-10">
-            {scan.malwareType && scan.malwareType !== "None" ? `${scan.malwareType} Detected` : "System Analysis Complete"}
-          </p>
+          <h2 className="text-3xl font-black mb-6 relative z-10">{RISK_LABELS[scan.riskLevel]}</h2>
           
           <div className="grid grid-cols-2 gap-4 w-full relative z-10">
             <div className="bg-black/20 backdrop-blur-md rounded-2xl p-3 flex flex-col items-center border border-white/10">
               <span className="text-[8px] font-black uppercase tracking-widest opacity-70 mb-1">Risk Score</span>
-              <span className="text-xl font-black">{scan.riskScore}%</span>
+              <span className="text-xl font-black">{scan.riskScore ?? 0}%</span>
             </div>
             <div className="bg-black/20 backdrop-blur-md rounded-2xl p-3 flex flex-col items-center border border-white/10">
               <span className="text-[8px] font-black uppercase tracking-widest opacity-70 mb-1">Confidence</span>
@@ -422,20 +416,11 @@ const ResultPage = () => {
           </div>
         </div>
 
-        {/* API Warning */}
-        {!scan.isLive && scan.type === ScanType.APK && (
-          <div className="bg-orange-50 border border-orange-100 rounded-2xl p-4 flex items-start">
-            <Info size={18} className="text-orange-500 mr-3 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-xs font-bold text-orange-900 mb-1">Local Analysis Only</p>
-              <p className="text-[10px] text-orange-700 leading-relaxed">
-                VirusTotal API key is not configured. This scan only checked for basic suspicious patterns and may not be accurate. Add your API key in the Secrets panel to enable full security scanning.
-              </p>
-            </div>
-          </div>
-        )}
-
         {/* Analysis Content */}
+
+
+
+            {/* Analysis Content */}
         <div className="space-y-6">
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
@@ -445,36 +430,11 @@ const ResultPage = () => {
             <div>
               <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Analysis Summary</h3>
               <div className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm">
-                <p className="text-sm text-gray-700 leading-relaxed font-medium">
+                <p className="text-sm text-gray-700 leading-relaxed font-medium whitespace-pre-line">
                   {scan.analysisMessage}
                 </p>
               </div>
             </div>
-
-            {scan.indicators && scan.indicators.length > 0 && (
-              <div>
-                <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Key Reasons</h3>
-                <div className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm space-y-3">
-                  {scan.indicators.map((reason, idx) => (
-                    <div key={idx} className="flex items-start">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#1E7FFF] mt-1.5 mr-3 flex-shrink-0" />
-                      <p className="text-xs text-gray-600 font-medium leading-relaxed">{reason}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {scan.recommendation && (
-              <div>
-                <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Recommendation</h3>
-                <div className="bg-blue-50 p-6 rounded-[32px] border border-blue-100">
-                  <p className="text-xs text-blue-900 font-bold leading-relaxed">
-                    {scan.recommendation}
-                  </p>
-                </div>
-              </div>
-            )}
           </motion.div>
         </div>
       </div>
@@ -505,10 +465,10 @@ const ScanApkPage = () => {
         const buffer = await file.arrayBuffer();
         const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
         const hash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-        navigate('/scanning', { state: { type: ScanType.APK, target: file.name, hash } });
+        navigate('/scanning', { state: { type: ScanType.APK, target: file.name, hash, file } });
       } catch (err) {
         console.error("Hashing error:", err);
-        navigate('/scanning', { state: { type: ScanType.APK, target: file.name } });
+        navigate('/scanning', { state: { type: ScanType.APK, target: file.name, file } });
       } finally {
         setIsHashing(false);
       }
@@ -534,10 +494,10 @@ const ScanApkPage = () => {
         const buffer = await file.arrayBuffer();
         const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
         const hash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-        navigate('/scanning', { state: { type: ScanType.APK, target: file.name, hash } });
+        navigate('/scanning', { state: { type: ScanType.APK, target: file.name, hash, file } });
       } catch (err) {
         console.error("Hashing error:", err);
-        navigate('/scanning', { state: { type: ScanType.APK, target: file.name } });
+        navigate('/scanning', { state: { type: ScanType.APK, target: file.name, file } });
       } finally {
         setIsHashing(false);
       }
@@ -796,7 +756,7 @@ const AppContent = () => {
           <Routes location={location}>
             <Route path="/" element={<HomePage />} />
             <Route path="/scan-url" element={<ScanUrlPage />} />
-            <Route path="/scanning" element={<ScanningPage />} />
+            <Route path="/scanning/:type/:target" element={<ScanningPage />} />
             <Route path="/scan-apk" element={<ScanApkPage />} />
             <Route path="/result/:id" element={<ResultPage />} />
             <Route path="/history" element={<HistoryPage />} />

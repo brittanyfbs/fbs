@@ -29,40 +29,43 @@ export const scanUrl = async (url: string): Promise<ScanResult> => {
     // Normalize URL
     const normalizedUrl = url.startsWith('http') ? url : `https://${url}`;
     
-    // Generate VirusTotal URL ID (Base64 without padding)
+    // 1. VirusTotal Scan
     const urlId = btoa(normalizedUrl).replace(/=/g, '');
+    const vtData = await fetch(`/api/vt/url/${urlId}`).then(r => r.ok ? r.json() : null);
 
-    const response = await fetch(`/api/vt/url/${urlId}`);
-
-    if (response.ok) {
-      const data = await response.json();
-      const stats = data.data.attributes.last_analysis_stats;
-      const maliciousCount = stats.malicious;
-      const totalEngines = Object.keys(data.data.attributes.last_analysis_results).length;
-
+    if (vtData) {
       isLive = true;
-      riskScore = Math.min(Math.round((maliciousCount / totalEngines) * 500), 100);
+      const stats = vtData.data.attributes.last_analysis_stats;
+      const maliciousCount = stats.malicious;
+      const totalEngines = Object.keys(vtData.data.attributes.last_analysis_results).length;
+
+      riskScore = Math.max(riskScore, Math.min(Math.round((maliciousCount / totalEngines) * 500), 100));
       confidence = 98;
       
       if (maliciousCount > 3) riskLevel = RiskLevel.HIGH;
       else if (maliciousCount > 0) riskLevel = RiskLevel.MEDIUM;
 
-      analysisMessage = `VirusTotal Report: ${maliciousCount} security vendors flagged this URL as malicious.`;
-      indicators.push(`VT Detection: ${maliciousCount}/${totalEngines}`);
-      recommendation = maliciousCount > 0 
-        ? "DANGER: This URL is flagged as malicious. Do not open it." 
-        : "VirusTotal found no threats for this URL.";
-      actions = maliciousCount > 0 
-        ? ["Close the browser tab", "Report this link if you received it in a message"] 
-        : ["Proceed with caution"];
+      indicators.push(`VirusTotal: ${maliciousCount}/${totalEngines} engines flagged`);
+    }
+
+    if (isLive) {
+      if (riskLevel === RiskLevel.HIGH) {
+        recommendation = "DANGER: This URL is confirmed malicious by VirusTotal. Do not proceed.";
+        actions = ["Close the tab", "Report the sender"];
+      } else if (riskLevel === RiskLevel.MEDIUM) {
+        recommendation = "WARNING: Some engines flagged this URL. Proceed with extreme caution.";
+        actions = ["Check for phishing signs", "Do not enter passwords"];
+      } else {
+        analysisMessage = "VirusTotal analysis complete. No major threats detected.";
+        recommendation = "The URL appears safe according to VirusTotal database.";
+      }
     } else {
-      // Fallback to heuristic if VT fails or URL is not in database
+      // Fallback to heuristic if APIs fail
       const urlObj = new URL(normalizedUrl);
       if (urlObj.protocol === 'http:') {
         indicators.push('Unsafe connection (HTTP)');
         riskLevel = RiskLevel.MEDIUM;
         riskScore = 55;
-        analysisMessage = "This link uses an unencrypted connection (HTTP), which can expose your data to interceptors.";
       }
       
       const suspiciousKeywords = ['login', 'verify', 'account', 'secure', 'update', 'bank', 'gift', 'prize'];
@@ -70,15 +73,11 @@ export const scanUrl = async (url: string): Promise<ScanResult> => {
         indicators.push('Suspicious keywords detected');
         riskLevel = RiskLevel.HIGH;
         riskScore = 85;
-        analysisMessage = "This link contains keywords often used in phishing attacks to trick users into giving up credentials.";
       }
     }
   } catch (e) {
     console.error("URL Scan Error:", e);
-    indicators.push('Invalid URL format');
-    riskLevel = RiskLevel.HIGH;
-    riskScore = 95;
-    analysisMessage = "The URL provided is malformed or invalid. This is often a sign of a malicious link designed to bypass filters.";
+    indicators.push('Scan error / Heuristic fallback');
   }
 
   return {
@@ -97,62 +96,97 @@ export const scanUrl = async (url: string): Promise<ScanResult> => {
   };
 };
 
-export const scanApk = async (filename: string, hash?: string): Promise<ScanResult> => {
+export const scanApk = async (filename: string, hash?: string, file?: File): Promise<ScanResult> => {
   try {
-    // If no hash provided, we can't search VT without uploading, so fallback
-    if (!hash) {
+    let manifestInfo = null;
+    
+    // 1. If we have the file, analyze manifest in backend
+    if (file) {
+      const formData = new FormData();
+      formData.append('apk', file);
+      const manifestRes = await fetch('/api/apk/analyze', {
+        method: 'POST',
+        body: formData
+      });
+      if (manifestRes.ok) {
+        const contentType = manifestRes.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          manifestInfo = await manifestRes.json();
+        } else {
+          console.error("APK Analysis returned non-JSON response:", await manifestRes.text());
+        }
+      }
+    }
+
+    // 2. VirusTotal Scan by Hash
+    let vtData = null;
+    if (hash) {
+      const vtRes = await fetch(`/api/vt/file/${hash}`);
+      if (vtRes.ok) {
+        vtData = await vtRes.json();
+      }
+    }
+
+    if (!vtData && !manifestInfo) {
       return fallbackScanApk(filename);
     }
 
-    const response = await fetch(`/api/vt/file/${hash}`);
-
-    if (response.status === 404 || response.status === 503 || response.status === 401 || response.status === 403) {
-      let message = "File hash not found in VirusTotal database. Performed local heuristic analysis.";
-      if (response.status === 503) message = "API Key Missing: Performed basic local check only.";
-      if (response.status === 401 || response.status === 403) message = "API Key Invalid: Please check your VirusTotal API key in secrets.";
-
-      return {
-        ...fallbackScanApk(filename),
-        analysisMessage: message,
-        isLive: false
-      };
-    }
-
-    if (!response.ok) {
-      throw new Error(`VirusTotal API error: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    const attributes = data.data.attributes;
-    const stats = attributes.last_analysis_stats;
-    const results = attributes.last_analysis_results;
-
-    const maliciousCount = stats.malicious;
-    const totalEngines = Object.keys(results).length;
-    
     let riskLevel = RiskLevel.LOW;
-    if (maliciousCount > 5) riskLevel = RiskLevel.HIGH;
-    else if (maliciousCount > 0) riskLevel = RiskLevel.MEDIUM;
+    let riskScore = 10;
+    const indicators: string[] = [];
+    const permissions: PermissionInfo[] = [];
+    const permissionAnalysis: string[] = [];
+
+    if (vtData) {
+      const stats = vtData.data.attributes.last_analysis_stats;
+      const maliciousCount = stats.malicious;
+      const totalEngines = Object.keys(vtData.data.attributes.last_analysis_results).length;
+      
+      riskScore = Math.max(riskScore, Math.min(Math.round((maliciousCount / totalEngines) * 500), 100));
+      if (maliciousCount > 5) riskLevel = RiskLevel.HIGH;
+      else if (maliciousCount > 0) riskLevel = RiskLevel.MEDIUM;
+      
+      indicators.push(`VirusTotal: ${maliciousCount}/${totalEngines} engines flagged`);
+    }
+
+    if (manifestInfo) {
+      const apkPermissions = manifestInfo.permissions || [];
+      apkPermissions.forEach((p: string) => {
+        const simpleName = p.split('.').pop() || p;
+        const dangerous = DANGEROUS_PERMISSIONS.find(dp => dp.name === simpleName);
+        if (dangerous) {
+          permissions.push(dangerous);
+          permissionAnalysis.push(`Requests ${simpleName}: ${dangerous.description}`);
+          if (dangerous.severity === RiskLevel.HIGH) {
+            riskLevel = RiskLevel.HIGH;
+            riskScore = Math.max(riskScore, 85);
+          }
+        }
+      });
+      indicators.push(`Package: ${manifestInfo.packageName}`);
+      indicators.push(`Permissions: ${apkPermissions.length} total`);
+    }
 
     return {
       id: Math.random().toString(36).substr(2, 9),
       type: ScanType.APK,
       target: filename,
       riskLevel,
-      riskScore: Math.min(Math.round((maliciousCount / totalEngines) * 500), 100),
+      riskScore,
       confidence: 98,
       timestamp: Date.now(),
-      analysisMessage: `VirusTotal Report: ${maliciousCount} security vendors flagged this file as malicious.`,
-      indicators: [`VT Detection: ${maliciousCount}/${totalEngines}`, `SHA-256: ${hash.substring(0, 16)}...`],
-      permissions: [], 
-      recommendation: maliciousCount > 0 ? "DANGER: This file is flagged as malicious by multiple security engines. Do not install." : "VirusTotal found no threats for this file hash.",
-      actions: maliciousCount > 0 ? ["Delete the file immediately", "Scan your device for infections"] : ["Proceed with caution"],
-      malwareType: maliciousCount > 0 ? "Detected Malware" : "None",
-      isLive: true
+      indicators,
+      permissions,
+      recommendation: riskLevel === RiskLevel.HIGH ? "DANGER: High-risk patterns or detections found. Do not install." : "No immediate threats found, but always be careful with APKs.",
+      actions: riskLevel === RiskLevel.HIGH ? ["Delete the file", "Check for similar apps in Play Store"] : ["Proceed with caution"],
+      malwareType: riskLevel === RiskLevel.HIGH ? "Potentially Harmful App" : "None",
+      permissionAnalysis,
+      isLive: !!(vtData || manifestInfo),
+      analysisMessage: vtData ? `VirusTotal report: ${vtData.data.attributes.last_analysis_stats.malicious} vendors flagged this file.` : "Manifest analysis complete. Checking for suspicious patterns.",
     };
 
   } catch (error) {
-    console.error("VirusTotal API Error:", error);
+    console.error("APK Scan Error:", error);
     return fallbackScanApk(filename);
   }
 };

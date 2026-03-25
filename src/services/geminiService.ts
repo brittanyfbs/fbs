@@ -8,6 +8,7 @@ export async function generateAnalysisSummary(scan: ScanResult): Promise<Partial
     const prompt = `
       You are a cybersecurity assistant that explains ${scan.type} scan results in a clear, human-friendly way.
       Your task is to generate natural, user-friendly explanations for ${scan.type} security analysis.
+      This analysis combines results from VirusTotal (70+ engines) and heuristic manifest analysis.
 
       ---
       ## IMPORTANT LANGUAGE STYLE RULES
@@ -23,11 +24,12 @@ export async function generateAnalysisSummary(scan: ScanResult): Promise<Partial
       * riskLevel: ${scan.riskLevel}
       * detected indicators: ${scan.indicators.join(", ")}
       ${scan.type === ScanType.APK ? `* permissions: ${scan.permissions?.map(p => p.name).join(", ")}` : ""}
+      ${scan.permissionAnalysis ? `* permission analysis: ${scan.permissionAnalysis.join(", ")}` : ""}
 
       ---
       ## OUTPUT REQUIREMENTS
       Generate 3 parts in JSON format:
-      1. summary (1–2 sentences): Clear explanation of the risk level. Natural human tone (no "it").
+      1. summary (1–2 sentences): Clear explanation of the risk level. Natural human tone (no "it"). Mention if VirusTotal flagged it.
       2. reasons (bullet points): Explain why the ${scan.type} is flagged. Use simple language.
       3. recommendation: Provide a neutral security recommendation in VERY SIMPLE ENGLISH. DO NOT explicitly tell the user to "install", "open", or "use" the file/link. Instead, state the findings and let the user make the final decision. Use easy words that anyone can understand. For example, "This looks okay, but always be careful with things from the internet."
 
@@ -57,7 +59,7 @@ export async function generateAnalysisSummary(scan: ScanResult): Promise<Partial
     `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.1-pro-preview",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -70,8 +72,17 @@ export async function generateAnalysisSummary(scan: ScanResult): Promise<Partial
       indicators: result.reasons || scan.indicators,
       recommendation: result.recommendation || scan.recommendation
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Analysis Error:", error);
+    
+    // Check for quota error
+    if (error?.message?.includes("429") || error?.message?.includes("RESOURCE_EXHAUSTED")) {
+      return {
+        analysisMessage: "AI analysis is currently unavailable due to high demand (quota exceeded). Please try again later.",
+        recommendation: "Please wait a few minutes before trying again. Your basic security scan is still valid."
+      };
+    }
+
     return {
       analysisMessage: scan.analysisMessage,
       indicators: scan.indicators,
