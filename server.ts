@@ -9,21 +9,17 @@ import fs from "fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({ dest: process.env.VERCEL ? '/tmp' : 'uploads/' });
 
-async function startServer() {
+async function createServer() {
   const app = express();
   const PORT = 3000;
 
-  // Ensure uploads directory exists and is writable
-  if (!fs.existsSync('uploads')) {
-    fs.mkdirSync('uploads', { recursive: true });
-  }
-  try {
-    fs.accessSync('uploads', fs.constants.W_OK);
-    console.log("Uploads directory is writable.");
-  } catch (err) {
-    console.error("Uploads directory is NOT writable:", err);
+  // Ensure uploads directory exists and is writable (only for local dev)
+  if (!process.env.VERCEL) {
+    if (!fs.existsSync('uploads')) {
+      fs.mkdirSync('uploads', { recursive: true });
+    }
   }
 
   app.use(express.json());
@@ -72,7 +68,7 @@ async function startServer() {
       console.log("Manifest extracted successfully for package:", manifest.package);
       
       // Clean up uploaded file
-      fs.unlinkSync(filePath);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
       
       res.json({
         packageName: manifest.package,
@@ -134,24 +130,105 @@ async function startServer() {
     }
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+  // Gemini AI Analysis
+  app.post("/api/analyze-summary", async (req, res) => {
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    if (!GEMINI_API_KEY) {
+      return res.status(503).json({ error: "GEMINI_API_KEY not configured" });
+    }
+
+    const { scan } = req.body;
+    if (!scan) {
+      return res.status(400).json({ error: "No scan data provided" });
+    }
+
+    try {
+      const { GoogleGenAI } = await import("@google/genai");
+      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      
+      const prompt = `
+        You are a cybersecurity assistant that explains ${scan.type} scan results in a clear, human-friendly way.
+        Your task is to generate natural, user-friendly explanations for ${scan.type} security analysis.
+        This analysis combines results from VirusTotal (70+ engines) and heuristic manifest analysis.
+
+        ---
+        ## IMPORTANT LANGUAGE STYLE RULES
+        * DO NOT use the word "it" to start sentences
+        * Avoid robotic or AI-like phrasing
+        * Use simple, natural English (like a real app explaining to users)
+        * Keep explanations short and clear
+        * Sound like a real human, not a technical system
+
+        ---
+        ## SCAN DATA
+        Target: ${scan.target}
+        Type: ${scan.type}
+        Risk Level: ${scan.riskLevel}
+        Risk Score: ${scan.riskScore}/100
+        Indicators: ${scan.indicators?.join(', ')}
+        ${scan.permissions ? `Permissions: ${scan.permissions.map((p: any) => p.name).join(', ')}` : ''}
+
+        ---
+        ## OUTPUT FORMAT (JSON)
+        Return ONLY a JSON object with these fields:
+        {
+          "analysisMessage": "A 2-3 sentence human-friendly explanation of the security status.",
+          "recommendation": "A clear, actionable recommendation for the user.",
+          "indicators": ["A list of 2-3 key security findings in plain English"]
+        }
+      `;
+
+      const result = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+
+      const responseText = result.text;
+      if (!responseText) {
+        throw new Error("Empty response from Gemini");
+      }
+
+      res.json(JSON.parse(responseText));
+    } catch (error) {
+      console.error("Gemini Analysis Error:", error);
+      res.status(500).json({ error: "Failed to generate AI summary" });
+    }
+  });
+
+  // Vite middleware for development (only if not on Vercel)
+  if (!process.env.VERCEL) {
+    if (process.env.NODE_ENV !== "production") {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  return app;
+}
+
+// For local development
+if (!process.env.VERCEL) {
+  createServer().then(app => {
+    app.listen(3000, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:3000`);
+    });
   });
 }
 
-startServer();
+// Export for Vercel
+export default async (req: any, res: any) => {
+  const app = await createServer();
+  return app(req, res);
+};
