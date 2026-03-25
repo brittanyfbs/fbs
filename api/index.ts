@@ -12,7 +12,7 @@ const upload = multer({ dest: process.env.VERCEL ? '/tmp' : 'uploads/' });
 
 async function createServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3000;
 
   // Ensure uploads directory exists and is writable (only for local dev)
   if (!process.env.VERCEL) {
@@ -154,8 +154,9 @@ async function createServer() {
 // For local development
 if (!process.env.VERCEL) {
   createServer().then(app => {
-    app.listen(3000, "0.0.0.0", () => {
-      console.log(`Server running on http://localhost:3000`);
+    const port = process.env.PORT || 3000;
+    app.listen(port, "0.0.0.0", () => {
+      console.log(`Server running on port ${port}`);
     });
   });
 }
