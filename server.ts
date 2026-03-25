@@ -3,7 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import multer from "multer";
-import ApkReader from "apkreader";
+import ApkReader from "adbkit-apkreader";
 import fs from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -15,7 +15,25 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Ensure uploads directory exists and is writable
+  if (!fs.existsSync('uploads')) {
+    fs.mkdirSync('uploads', { recursive: true });
+  }
+  try {
+    fs.accessSync('uploads', fs.constants.W_OK);
+    console.log("Uploads directory is writable.");
+  } catch (err) {
+    console.error("Uploads directory is NOT writable:", err);
+  }
+
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+  
+  // Log all requests
+  app.use((req, res, next) => {
+    console.log(`${req.method} ${req.url}`);
+    next();
+  });
 
   const VT_API_KEY = process.env.VIRUSTOTAL_API_KEY;
 
@@ -26,6 +44,10 @@ async function startServer() {
   }
 
   // API routes
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", timestamp: Date.now() });
+  });
+
   app.get("/api/config/status", (req, res) => {
     res.json({
       virustotal: !!VT_API_KEY,
@@ -35,14 +57,19 @@ async function startServer() {
 
   // APK Analysis
   app.post("/api/apk/analyze", upload.single('apk'), async (req, res) => {
+    console.log("Received APK analysis request");
     if (!req.file) {
+      console.error("No APK file uploaded in request");
       return res.status(400).json({ error: "No APK file uploaded" });
     }
 
     const filePath = req.file.path;
+    console.log(`Analyzing APK at: ${filePath}`);
     try {
       const reader = await ApkReader.open(filePath);
       const manifest = await reader.readManifest();
+      
+      console.log("Manifest extracted successfully for package:", manifest.package);
       
       // Clean up uploaded file
       fs.unlinkSync(filePath);

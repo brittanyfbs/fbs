@@ -100,6 +100,12 @@ const HomePage = () => {
         <div className="pt-2 flex justify-between items-end">
           <div>
             <h2 className="text-3xl font-extrabold text-gray-900">Security Center</h2>
+            {localStorage.getItem('demo_mode') === 'true' && (
+              <div className="mt-1 flex items-center text-[#1E7FFF]">
+                <Zap size={12} className="mr-1 fill-current" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Presentation Mode Active</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -248,6 +254,8 @@ const ScanningPage = () => {
   const [status, setStatus] = useState('Initializing...');
   const scanPerformed = useRef(false);
 
+  console.log("ScanningPage render:", { type, target, state: location.state });
+
   useEffect(() => {
     if (!type || !target) {
       navigate('/');
@@ -280,31 +288,39 @@ const ScanningPage = () => {
     };
 
     const performScan = async () => {
-      requestAnimationFrame(updateProgress);
-      
-      const { hash, file } = location.state || {};
-      const scanPromise = type === ScanType.URL ? scanUrl(target) : scanApk(target, hash, file);
-      
-      // Wait for both the scan and the minimum duration
-      const [result] = await Promise.all([
-        scanPromise,
-        new Promise(resolve => setTimeout(resolve, duration))
-      ]);
-      
-      // Generate AI Summary
-      setStatus('Generating AI Summary...');
-      const aiSummary = await generateAnalysisSummary(result);
-      result.analysisMessage = aiSummary.analysisMessage || result.analysisMessage;
-      result.indicators = aiSummary.indicators || result.indicators;
-      result.recommendation = aiSummary.recommendation || result.recommendation;
-      
-      setProgress(100);
-      setStatus('Scan Complete');
-      saveScanResult(result);
-      
-      setTimeout(() => {
-        navigate(`/result/${result.id}`, { replace: true });
-      }, 600);
+      try {
+        requestAnimationFrame(updateProgress);
+        
+        const { hash, file } = location.state || {};
+        const scanPromise = type === ScanType.URL ? scanUrl(target) : scanApk(target, hash, file);
+        
+        // Wait for both the scan and the minimum duration
+        const [result] = await Promise.all([
+          scanPromise,
+          new Promise(resolve => setTimeout(resolve, duration))
+        ]);
+        
+        // Generate AI Summary
+        setStatus('Generating AI Summary...');
+        const aiSummary = await generateAnalysisSummary(result);
+        result.analysisMessage = aiSummary.analysisMessage || result.analysisMessage;
+        result.indicators = aiSummary.indicators || result.indicators;
+        result.recommendation = aiSummary.recommendation || result.recommendation;
+        
+        setProgress(100);
+        setStatus('Scan Complete');
+        saveScanResult(result);
+        
+        setTimeout(() => {
+          navigate(`/result/${result.id}`, { replace: true });
+        }, 600);
+      } catch (error) {
+        console.error("Scan error:", error);
+        setStatus('Scan failed. Please try again.');
+        setTimeout(() => {
+          navigate('/', { replace: true });
+        }, 2000);
+      }
     };
 
     performScan();
@@ -363,6 +379,9 @@ const ScanningPage = () => {
           <h2 className="text-2xl font-black text-gray-900">
             {type === ScanType.URL ? "URL SCANNING..." : "APK SCANNING..."}
           </h2>
+          <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">
+            Scanning in progress, thanks for waiting
+          </p>
         </div>
       </div>
     </div>
@@ -533,7 +552,7 @@ const ScanApkPage = () => {
             {isHashing ? <Activity className="animate-spin" size={32} /> : <Upload size={32} />}
           </div>
           <p className="font-black text-gray-900 mb-1">{isHashing ? 'Analyzing File...' : 'Choose APK File'}</p>
-          <p className="text-[10px] font-bold uppercase tracking-widest">{isHashing ? 'Please wait' : 'Or drag and drop'}</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest">{isHashing ? 'Scanning in progress, thanks for waiting' : 'Or drag and drop'}</p>
         </div>
 
         <div className="mt-12">
@@ -553,6 +572,12 @@ const HistoryPage = () => {
 
   useEffect(() => {
     setHistory(getScanHistory());
+    
+    // Check API health
+    fetch('/api/health', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : Promise.reject(r))
+      .then(data => console.log("API Health Check:", data))
+      .catch(err => console.error("API Health Check Failed:", err));
   }, []);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -665,11 +690,46 @@ const HistoryPage = () => {
 
 const SettingsPage = () => {
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [demoMode, setDemoMode] = useState(localStorage.getItem('demo_mode') === 'true');
+
+  const toggleDemoMode = () => {
+    const newValue = !demoMode;
+    setDemoMode(newValue);
+    localStorage.setItem('demo_mode', newValue.toString());
+  };
 
   return (
     <div className="pb-24 bg-white min-h-screen">
       <TopBar title="Settings" />
       <div className="px-5 py-4 space-y-8">
+        {/* Presentation Section */}
+        <div>
+          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 px-1">Developer Tools</h3>
+          <div className="bg-gray-50 rounded-3xl overflow-hidden border border-gray-100">
+            <div className="p-5 flex items-center justify-between">
+              <div className="flex items-center">
+                <Zap size={20} className={cn("mr-3", demoMode ? "text-yellow-500" : "text-gray-400")} />
+                <div>
+                  <p className="font-bold text-gray-900 text-sm">Presentation Mode</p>
+                  <p className="text-[10px] text-gray-500 font-medium">Ensures reliable results for demos</p>
+                </div>
+              </div>
+              <button 
+                onClick={toggleDemoMode}
+                className={cn(
+                  "w-12 h-6 rounded-full transition-all duration-300 relative",
+                  demoMode ? "bg-[#1E7FFF]" : "bg-gray-300"
+                )}
+              >
+                <div className={cn(
+                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300",
+                  demoMode ? "left-7" : "left-1"
+                )} />
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Support Section */}
         <div>
           <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 px-1">Support & Info</h3>
@@ -756,7 +816,7 @@ const AppContent = () => {
           <Routes location={location}>
             <Route path="/" element={<HomePage />} />
             <Route path="/scan-url" element={<ScanUrlPage />} />
-            <Route path="/scanning/:type/:target" element={<ScanningPage />} />
+            <Route path="/scanning" element={<ScanningPage />} />
             <Route path="/scan-apk" element={<ScanApkPage />} />
             <Route path="/result/:id" element={<ResultPage />} />
             <Route path="/history" element={<HistoryPage />} />
