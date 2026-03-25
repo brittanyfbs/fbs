@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import multer from "multer";
@@ -130,84 +129,18 @@ async function createServer() {
     }
   });
 
-  // Gemini AI Analysis
-  app.post("/api/analyze-summary", async (req, res) => {
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) {
-      return res.status(503).json({ error: "GEMINI_API_KEY not configured" });
-    }
-
-    const { scan } = req.body;
-    if (!scan) {
-      return res.status(400).json({ error: "No scan data provided" });
-    }
-
-    try {
-      const { GoogleGenAI } = await import("@google/genai");
-      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-      
-      const prompt = `
-        You are a cybersecurity assistant that explains ${scan.type} scan results in a clear, human-friendly way.
-        Your task is to generate natural, user-friendly explanations for ${scan.type} security analysis.
-        This analysis combines results from VirusTotal (70+ engines) and heuristic manifest analysis.
-
-        ---
-        ## IMPORTANT LANGUAGE STYLE RULES
-        * DO NOT use the word "it" to start sentences
-        * Avoid robotic or AI-like phrasing
-        * Use simple, natural English (like a real app explaining to users)
-        * Keep explanations short and clear
-        * Sound like a real human, not a technical system
-
-        ---
-        ## SCAN DATA
-        Target: ${scan.target}
-        Type: ${scan.type}
-        Risk Level: ${scan.riskLevel}
-        Risk Score: ${scan.riskScore}/100
-        Indicators: ${scan.indicators?.join(', ')}
-        ${scan.permissions ? `Permissions: ${scan.permissions.map((p: any) => p.name).join(', ')}` : ''}
-
-        ---
-        ## OUTPUT FORMAT (JSON)
-        Return ONLY a JSON object with these fields:
-        {
-          "analysisMessage": "A 2-3 sentence human-friendly explanation of the security status.",
-          "recommendation": "A clear, actionable recommendation for the user.",
-          "indicators": ["A list of 2-3 key security findings in plain English"]
-        }
-      `;
-
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json"
-        }
-      });
-
-      const responseText = result.text;
-      if (!responseText) {
-        throw new Error("Empty response from Gemini");
-      }
-
-      res.json(JSON.parse(responseText));
-    } catch (error) {
-      console.error("Gemini Analysis Error:", error);
-      res.status(500).json({ error: "Failed to generate AI summary" });
-    }
-  });
-
   // Vite middleware for development (only if not on Vercel)
-  if (!process.env.VERCEL) {
-    if (process.env.NODE_ENV !== "production") {
-      const vite = await createViteServer({
-        server: { middlewareMode: true },
-        appType: "spa",
-      });
-      app.use(vite.middlewares);
-    } else {
-      const distPath = path.join(process.cwd(), 'dist');
+  if (!process.env.VERCEL && process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else if (!process.env.VERCEL) {
+    // Local production mode
+    const distPath = path.join(process.cwd(), 'dist');
+    if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));
       app.get('*all', (req, res) => {
         res.sendFile(path.join(distPath, 'index.html'));

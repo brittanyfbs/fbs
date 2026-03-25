@@ -575,9 +575,20 @@ const HistoryPage = () => {
     
     // Check API health
     fetch('/api/health', { credentials: 'include' })
-      .then(r => r.ok ? r.json() : Promise.reject(r))
+      .then(async r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const contentType = r.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          return r.json();
+        }
+        const text = await r.text();
+        if (text.includes("<!doctype html>") || text.includes("<html")) {
+          throw new Error("Cookie check required");
+        }
+        throw new Error("Non-JSON response");
+      })
       .then(data => console.log("API Health Check:", data))
-      .catch(err => console.error("API Health Check Failed:", err));
+      .catch(err => console.warn("API Health Check Warning:", err.message));
   }, []);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -690,46 +701,11 @@ const HistoryPage = () => {
 
 const SettingsPage = () => {
   const [showPrivacy, setShowPrivacy] = useState(false);
-  const [demoMode, setDemoMode] = useState(localStorage.getItem('demo_mode') === 'true');
-
-  const toggleDemoMode = () => {
-    const newValue = !demoMode;
-    setDemoMode(newValue);
-    localStorage.setItem('demo_mode', newValue.toString());
-  };
 
   return (
     <div className="pb-24 bg-white min-h-screen">
       <TopBar title="Settings" />
       <div className="px-5 py-4 space-y-8">
-        {/* Presentation Section */}
-        <div>
-          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 px-1">Developer Tools</h3>
-          <div className="bg-gray-50 rounded-3xl overflow-hidden border border-gray-100">
-            <div className="p-5 flex items-center justify-between">
-              <div className="flex items-center">
-                <Zap size={20} className={cn("mr-3", demoMode ? "text-yellow-500" : "text-gray-400")} />
-                <div>
-                  <p className="font-bold text-gray-900 text-sm">Presentation Mode</p>
-                  <p className="text-[10px] text-gray-500 font-medium">Ensures reliable results for demos</p>
-                </div>
-              </div>
-              <button 
-                onClick={toggleDemoMode}
-                className={cn(
-                  "w-12 h-6 rounded-full transition-all duration-300 relative",
-                  demoMode ? "bg-[#1E7FFF]" : "bg-gray-300"
-                )}
-              >
-                <div className={cn(
-                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300",
-                  demoMode ? "left-7" : "left-1"
-                )} />
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* Support Section */}
         <div>
           <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 px-1">Support & Info</h3>

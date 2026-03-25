@@ -68,7 +68,7 @@ export const scanUrl = async (url: string): Promise<ScanResult> => {
     }
 
     // 1. VirusTotal Scan
-    const urlId = btoa(normalizedUrl).replace(/=/g, '');
+    const urlId = btoa(unescape(encodeURIComponent(normalizedUrl))).replace(/=/g, '');
     const vtRes = await fetch(`/api/vt/url/${urlId}`, { credentials: 'include' });
     let vtData = null;
     
@@ -78,7 +78,11 @@ export const scanUrl = async (url: string): Promise<ScanResult> => {
         vtData = await vtRes.json();
       } else {
         const text = await vtRes.text();
-        console.warn("VirusTotal URL API returned non-JSON response. This usually indicates a session/cookie issue with the preview environment.");
+        if (text.includes("<!doctype html>") || text.includes("<html")) {
+          console.warn("VirusTotal URL API returned the Cookie Check page. This usually indicates a session/cookie issue with the preview environment.");
+        } else {
+          console.warn("VirusTotal URL API returned non-JSON response:", text.substring(0, 100));
+        }
         // We don't throw here, just fall back to heuristics
       }
     }
@@ -170,6 +174,9 @@ export const scanApk = async (filename: string, hash?: string, file?: File): Pro
           manifestInfo = await manifestRes.json();
         } else {
           const text = await manifestRes.text();
+          if (text.includes("<!doctype html>") || text.includes("<html")) {
+            throw new Error("Your browser is blocking required security cookies. Please open the app in a new tab to authenticate.");
+          }
           console.error("APK Analysis returned non-JSON response:", text);
           throw new Error(`APK Analysis returned non-JSON response: ${text.substring(0, 100)}...`);
         }

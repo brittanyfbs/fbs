@@ -1,20 +1,62 @@
+import { GoogleGenAI } from "@google/genai";
 import { ScanResult, ScanType, RiskLevel } from "../types";
 
 export async function generateAnalysisSummary(scan: ScanResult): Promise<Partial<ScanResult>> {
   try {
-    const response = await fetch('/api/analyze-summary', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ scan }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Server returned ${response.status}`);
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    if (!GEMINI_API_KEY) {
+      console.warn("GEMINI_API_KEY not found in environment, falling back to heuristic summary.");
+      return getFallbackSummary(scan);
     }
 
-    const data = await response.json();
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    
+    const prompt = `
+      You are a cybersecurity assistant that explains ${scan.type} scan results in a clear, human-friendly way.
+      Your task is to generate natural, user-friendly explanations for ${scan.type} security analysis.
+      This analysis combines results from VirusTotal (70+ engines) and heuristic manifest analysis.
+
+      ---
+      ## IMPORTANT LANGUAGE STYLE RULES
+      * DO NOT use the word "it" to start sentences
+      * Avoid robotic or AI-like phrasing
+      * Use simple, natural English (like a real app explaining to users)
+      * Keep explanations short and clear
+      * Sound like a real human, not a technical system
+
+      ---
+      ## SCAN DATA
+      Target: ${scan.target}
+      Type: ${scan.type}
+      Risk Level: ${scan.riskLevel}
+      Risk Score: ${scan.riskScore}/100
+      Indicators: ${scan.indicators?.join(', ')}
+      ${scan.permissions ? `Permissions: ${scan.permissions.map((p: any) => p.name).join(', ')}` : ''}
+
+      ---
+      ## OUTPUT FORMAT (JSON)
+      Return ONLY a JSON object with these fields:
+      {
+        "analysisMessage": "A 2-3 sentence human-friendly explanation of the security status.",
+        "recommendation": "A clear, actionable recommendation for the user.",
+        "indicators": ["A list of 2-3 key security findings in plain English"]
+      }
+    `;
+
+    const result = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json"
+      }
+    });
+
+    const responseText = result.text;
+    if (!responseText) {
+      throw new Error("Empty response from Gemini");
+    }
+
+    const data = JSON.parse(responseText);
     return {
       analysisMessage: data.analysisMessage || data.summary,
       indicators: data.indicators || data.reasons,
