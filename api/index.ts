@@ -88,11 +88,19 @@ async function createServer() {
     }
 
     try {
-      const response = await fetch(`https://www.virustotal.com/api/v3/urls/${req.params.id}`, {
+      const vtUrl = `https://www.virustotal.com/api/v3/urls/${req.params.id}`;
+      console.log(`[VT URL] API key prefix: ${VT_API_KEY.substring(0, 10)}`);
+      console.log(`[VT URL] Requesting: ${vtUrl}`);
+
+      const response = await fetch(vtUrl, {
         headers: { 'x-apikey': VT_API_KEY }
       });
 
-      console.log(`VirusTotal URL API Response: ${response.status} ${response.statusText}`);
+      console.log(`[VT URL] Response status: ${response.status} ${response.statusText}`);
+      console.log(`[VT URL] Response headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()))}`);
+
+      const responseBody = await response.text();
+      console.log(`[VT URL] Response body: ${responseBody}`);
 
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
@@ -101,8 +109,7 @@ async function createServer() {
         return res.status(response.status).json({ error: response.statusText });
       }
 
-      const data = await response.json();
-      res.json(data);
+      res.json(JSON.parse(responseBody));
     } catch (error) {
       res.status(500).json({ error: "Internal Server Error" });
     }
@@ -114,16 +121,25 @@ async function createServer() {
     }
 
     try {
-      const response = await fetch(`https://www.virustotal.com/api/v3/files/${req.params.hash}`, {
+      const vtUrl = `https://www.virustotal.com/api/v3/files/${req.params.hash}`;
+      console.log(`[VT FILE] API key prefix: ${VT_API_KEY.substring(0, 10)}`);
+      console.log(`[VT FILE] Requesting: ${vtUrl}`);
+
+      const response = await fetch(vtUrl, {
         headers: { 'x-apikey': VT_API_KEY }
       });
+
+      console.log(`[VT FILE] Response status: ${response.status} ${response.statusText}`);
+      console.log(`[VT FILE] Response headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()))}`);
+
+      const responseBody = await response.text();
+      console.log(`[VT FILE] Response body: ${responseBody}`);
 
       if (!response.ok) {
         return res.status(response.status).json({ error: response.statusText });
       }
 
-      const data = await response.json();
-      res.json(data);
+      res.json(JSON.parse(responseBody));
     } catch (error) {
       res.status(500).json({ error: "Internal Server Error" });
     }
