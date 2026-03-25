@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "tsx api/index.ts",
     "build": "vite build",
@@ -18,8 +21,6 @@
     "@vitejs/plugin-react": "^5.0.4",
     "adbkit-apkreader": "^3.2.0",
     "adm-zip": "^0.5.16",
-    "apk-parser": "^0.1.7",
-    "apkreader": "^1.0.7",
     "clsx": "^2.1.1",
     "debug": "^4.4.3",
     "dotenv": "^17.2.3",
