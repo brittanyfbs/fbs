@@ -87,24 +87,34 @@ async function createServer() {
       return res.status(503).json({ error: "VIRUSTOTAL_API_KEY not configured" });
     }
 
+    const url = `https://www.virustotal.com/api/v3/urls/${req.params.id}`;
+    console.log(`[VT DEBUG] Requesting URL: ${url}`);
+    console.log(`[VT DEBUG] API Key (first 10): ${VT_API_KEY.substring(0, 10)}...`);
+
     try {
-      const response = await fetch(`https://www.virustotal.com/api/v3/urls/${req.params.id}`, {
+      const response = await fetch(url, {
         headers: { 'x-apikey': VT_API_KEY }
       });
 
-      console.log(`VirusTotal URL API Response: ${response.status} ${response.statusText}`);
+      const responseText = await response.text();
+      const responseHeaders = Object.fromEntries(response.headers.entries());
+      
+      console.log(`[VT DEBUG] Status: ${response.status} ${response.statusText}`);
+      console.log(`[VT DEBUG] Headers:`, JSON.stringify(responseHeaders, null, 2));
+      console.log(`[VT DEBUG] Body:`, responseText);
 
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
           console.error("VirusTotal API Key is invalid or unauthorized.");
         }
-        return res.status(response.status).json({ error: response.statusText });
+        return res.status(response.status).send(responseText);
       }
 
-      const data = await response.json();
+      const data = JSON.parse(responseText);
       res.json(data);
     } catch (error) {
-      res.status(500).json({ error: "Internal Server Error" });
+      console.error("[VT DEBUG] Error:", error);
+      res.status(500).json({ error: "Internal Server Error", details: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -113,19 +123,31 @@ async function createServer() {
       return res.status(503).json({ error: "VIRUSTOTAL_API_KEY not configured" });
     }
 
+    const url = `https://www.virustotal.com/api/v3/files/${req.params.hash}`;
+    console.log(`[VT DEBUG] Requesting File: ${url}`);
+    console.log(`[VT DEBUG] API Key (first 10): ${VT_API_KEY.substring(0, 10)}...`);
+
     try {
-      const response = await fetch(`https://www.virustotal.com/api/v3/files/${req.params.hash}`, {
+      const response = await fetch(url, {
         headers: { 'x-apikey': VT_API_KEY }
       });
 
+      const responseText = await response.text();
+      const responseHeaders = Object.fromEntries(response.headers.entries());
+
+      console.log(`[VT DEBUG] Status: ${response.status} ${response.statusText}`);
+      console.log(`[VT DEBUG] Headers:`, JSON.stringify(responseHeaders, null, 2));
+      console.log(`[VT DEBUG] Body:`, responseText);
+
       if (!response.ok) {
-        return res.status(response.status).json({ error: response.statusText });
+        return res.status(response.status).send(responseText);
       }
 
-      const data = await response.json();
+      const data = JSON.parse(responseText);
       res.json(data);
     } catch (error) {
-      res.status(500).json({ error: "Internal Server Error" });
+      console.error("[VT DEBUG] Error:", error);
+      res.status(500).json({ error: "Internal Server Error", details: error instanceof Error ? error.message : String(error) });
     }
   });
 
